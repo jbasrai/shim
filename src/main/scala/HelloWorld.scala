@@ -6,5 +6,6 @@ object HelloWorld {
     val sim = new Simulation(10)
     val results = sim.start
     println(results.map(_.winner))
+    println(results.head.log)
   }
 }

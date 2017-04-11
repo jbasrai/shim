@@ -24,19 +24,36 @@ class Simulation(numberOfGames: Int) {
   }
 
   def simulateTurn(game: Game): Game = {
-    Game(game.deck.next(game.board), game.deck.draw match {
-      case H3r => {
-        game.board.enactPolicy(Fascist)
-      }
-      case _ => {
-        game.board.enactPolicy(Liberal)
-      }
-    })
+    val pHand = game.deck.draw
+    val nextDeck = game.deck.next(game.board)
+
+    val pDiscard = pHand match {
+      case H3b => Liberal
+      case _ => Fascist
+    }
+
+    val cHand = pHand.discard(pDiscard)
+
+    val cDiscard = cHand match {
+      case H2b => Liberal
+      case _ => Fascist
+    }
+
+    val enactedPolicy =
+      if (cHand.discard(cDiscard).fascists == 1) Fascist
+      else Liberal
+
+    val nextBoard = game.board.enactPolicy(enactedPolicy)
+
+    val nextLog = Turn(pHand, pDiscard, cDiscard, enactedPolicy) :: game.log
+
+    Game(nextDeck, nextBoard, nextLog)
   }
 }
 
 case class Game(deck: Deck,
-                board: Board) {
+                board: Board,
+                log: List[Turn]) {
   val isOver = board.fascists == 6 || board.liberals == 5
 
   val winner: Faction =
@@ -46,8 +63,13 @@ case class Game(deck: Deck,
       Liberal
 }
 
+case class Turn(draw: Hand,
+                pDiscard: Faction,
+                cDiscard: Faction,
+                enactedPolicy: Faction)
+
 object Game {
-  def reset: Game = Game(Deck.reset, Board.reset)
+  def reset: Game = Game(Deck.reset, Board.reset, Nil)
 }
 
 case class Board(fascists: Int, liberals: Int) {
@@ -65,7 +87,7 @@ case class Deck(policies: List[Policy]) {
   val draw: Hand = Hand.fromList(policies take 3)
 
   def next(board: Board): Deck = {
-    if (policies.length >= 3)
+    if (policies.length >= 6)
       Deck(policies drop 3)
     else
       Deck.shuffle(
@@ -91,11 +113,20 @@ object Deck {
   def reset: Deck = shuffle(totalFascistPolicies, totalLiberalPolicies)
 }
 
-case class Hand(fascists: Int, liberals: Int)
+case class Hand(fascists: Int, liberals: Int) {
+  def discard(faction: Faction): Hand = faction match {
+    case Fascist => Hand(fascists - 1, liberals)
+    case Liberal => Hand(fascists, liberals - 1)
+  }
+}
+
 object H3r extends Hand(3, 0)
 object H2r1b extends Hand(2, 1)
 object H1r2b extends Hand(1, 2)
 object H3b extends Hand(0, 3)
+object H2r extends Hand(2, 0)
+object H1r1b extends Hand(1, 1)
+object H2b extends Hand(0, 2)
 
 object Hand {
   def fromList(policies: List[Policy]): Hand =

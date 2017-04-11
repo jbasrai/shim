@@ -1,0 +1,3 @@
+begin implementing strategies
+	introduce notion of players and player actions
+	player govt action based on faction

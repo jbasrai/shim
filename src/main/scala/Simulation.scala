@@ -4,26 +4,31 @@ import scala.util.Random
   * Created by jbasrai on 4/10/17.
   */
 class Simulation(numberOfGames: Int) {
+  // main entry point of the project
+  // runs the simulation from start to finish, over <numberOfGames> trials
+  // returns a reverse-ordered list of final game states, each also containing the complete game log
   def start: List[Game] = runSimulation(1, Nil)
 
-  def runSimulation(gameCount: Int, results: List[Game]): List[Game] = {
-    if (gameCount > numberOfGames) {
+  private def runSimulation(gameCount: Int, results: List[Game]): List[Game] = {
+    if (gameCount > numberOfGames)
       results
-    } else {
+    else
       runSimulation(gameCount + 1, simulateGame(Game.reset) :: results)
-    }
   }
 
-  def simulateGame(game: Game): Game = {
+  // plays out a game from start to finish, returning the final game state
+  private def simulateGame(game: Game): Game = {
     if (!game.isOver) {
-      val next = simulateTurn(game)
-      simulateGame(next)
-    } else {
-      game
+      val nextGameState = simulateTurn(game)
+      simulateGame(nextGameState)
     }
+    else
+      game
   }
 
-  def simulateTurn(game: Game): Game = {
+  // the meat of the simulation is contained here
+  private def simulateTurn(game: Game): Game = {
+    // the president draws 3 cards, discards a card, and passes the remaining hand to the chancellor
     val pHand = game.deck.draw
     val nextDeck = game.deck.next(game.board)
 
@@ -32,6 +37,7 @@ class Simulation(numberOfGames: Int) {
       case _ => Fascist
     }
 
+    // then the chancellor discards a card and enacts the remaining policy
     val cHand = pHand.discard(pDiscard)
 
     val cDiscard = cHand match {
@@ -63,14 +69,14 @@ case class Game(deck: Deck,
       Liberal
 }
 
+object Game {
+  def reset: Game = Game(Deck.reset, Board.reset, Nil)
+}
+
 case class Turn(draw: Hand,
                 pDiscard: Faction,
                 cDiscard: Faction,
                 enactedPolicy: Faction)
-
-object Game {
-  def reset: Game = Game(Deck.reset, Board.reset, Nil)
-}
 
 case class Board(fascists: Int, liberals: Int) {
   def enactPolicy(faction: Faction): Board = faction match {
@@ -113,13 +119,24 @@ object Deck {
   def reset: Deck = shuffle(totalFascistPolicies, totalLiberalPolicies)
 }
 
+// this is not a List[Policy] in order to relax equality and allow pattern matching
+// for now, assume order of the cards in hand does not matter
 case class Hand(fascists: Int, liberals: Int) {
+  // does not protect against invalid hands, discard responsibly
   def discard(faction: Faction): Hand = faction match {
     case Fascist => Hand(fascists - 1, liberals)
     case Liberal => Hand(fascists, liberals - 1)
   }
 }
 
+object Hand {
+  // helps simply construction when hand is drawn from deck: List[Policy]
+  def fromList(policies: List[Policy]): Hand =
+    Hand(policies count (_ == Policy(Fascist)),
+      policies count (_ == Policy(Liberal)))
+}
+
+// more expressive names
 object H3r extends Hand(3, 0)
 object H2r1b extends Hand(2, 1)
 object H1r2b extends Hand(1, 2)
@@ -128,12 +145,7 @@ object H2r extends Hand(2, 0)
 object H1r1b extends Hand(1, 1)
 object H2b extends Hand(0, 2)
 
-object Hand {
-  def fromList(policies: List[Policy]): Hand =
-    Hand(policies count (_ == Policy(Fascist)),
-      policies count (_ == Policy(Liberal)))
-}
-
+// really the only time we care about this is for the deck, using faction by itself is usually simpler
 case class Policy(faction: Faction)
 
 sealed trait Faction

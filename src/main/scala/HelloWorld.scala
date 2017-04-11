@@ -7,6 +7,8 @@ object HelloWorld {
     val sim = new Simulation(trials)
     val results = sim.start
 
+    println(results.head.log)
+
     val liberalWins = results.map(_.winner).count(_ == Liberal)
 
     val fascistFrequencyMap = results.map(_.board.fascists).groupBy(x => x).mapValues(_.length).toList.sortBy(_._1)

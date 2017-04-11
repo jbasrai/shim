@@ -28,7 +28,7 @@ class Simulation(numberOfGames: Int) {
 
   // the meat of the simulation is contained here
   private def simulateTurn(game: Game): Game = {
-    if (game.players.isGovtActive) {
+    if (!game.players.isGovtActive) {
       val nextGameState = simulateVote(game)
       simulateTurn(nextGameState)
     } else {
@@ -54,7 +54,10 @@ class Simulation(numberOfGames: Int) {
 
       val nextBoard = game.board.enactPolicy(enactedPolicy)
 
-      val nextLog = Turn(pHand, pDiscard, cDiscard, enactedPolicy) :: game.log
+      val nextLog = Turn(
+        game.players.presidentId,
+        game.players.chancellorId,
+        pHand, pDiscard, cDiscard, enactedPolicy) :: game.log
 
       val nextDeck = game.deck.next(game.board)
 
@@ -102,6 +105,10 @@ case class PlayerGroup(players: Set[Player]) {
   val isGovtActive = players.exists(_.isChancellor)
 
   val presidentId = players.find(_.isPresident).get.id
+
+  val chancellorId =
+    if (isGovtActive) players.find(_.isChancellor).get.id
+    else -1
 
   def advancePresident = {
     val nextPresidentId = if (presidentId == 5) 1 else presidentId + 1
@@ -153,7 +160,9 @@ case class Player(id: Int,
                   isChancellor: Boolean,
                   eligibleForChancellor: Boolean)
 
-case class Turn(draw: Hand,
+case class Turn(presidentId: Int,
+                chancellorId: Int,
+                draw: Hand,
                 pDiscard: Faction,
                 cDiscard: Faction,
                 enactedPolicy: Faction)

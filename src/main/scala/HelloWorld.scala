@@ -4,7 +4,7 @@
 object HelloWorld {
   def main(args: Array[String]): Unit = {
     val trials = 1000
-    val sim = new Simulation(trials)
+    val sim = new Simulation(new SimpleFascistStrategy, trials)
     val results = sim.start
 
     println(results.head.log)

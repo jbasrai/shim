@@ -3,7 +3,7 @@ import scala.util.Random
 /**
   * Created by jbasrai on 4/10/17.
   */
-class Simulation(numberOfGames: Int) {
+class Simulation(strategy: Strategy, numberOfGames: Int) {
   // main entry point of the project
   // runs the simulation from start to finish, over <numberOfGames> trials
   // returns a reverse-ordered list of final game states, each also containing the complete game log
@@ -26,49 +26,24 @@ class Simulation(numberOfGames: Int) {
       game
   }
 
-  // the meat of the simulation is contained here
+  // all strategy calls are contained here
   private def simulateTurn(game: Game): Game = {
-    if (!game.players.isGovtActive) {
-      val nextGameState = simulateVote(game)
-      simulateTurn(nextGameState)
-    } else {
-      // the president draws 3 cards, discards a card, and passes the remaining hand to the chancellor
-      val pHand = game.deck.draw
-      assert(pHand.size == 3)
-
-      val pDiscard = pHand match {
-        case H3b => Liberal
-        case _ => Fascist
-      }
-
-      // then the chancellor discards a card and enacts the remaining policy
-      val cHand = pHand - pDiscard
-      assert(cHand.size == 2)
-
-      val cDiscard = cHand match {
-        case H2b => Liberal
-        case _ => Fascist
-      }
-
-      val enactedPolicy = (cHand - cDiscard).card
-
-      val nextBoard = game.board.enactPolicy(enactedPolicy)
-
-      val nextLog = Turn(
-        game.players.presidentId,
-        game.players.chancellorId,
-        pHand, pDiscard, cDiscard, enactedPolicy) :: game.log
-
-      val nextDeck = game.deck.next(game.board)
-
-      val nextPlayers = game.players.advancePresident
-
-      Game(nextDeck, nextBoard, nextPlayers, nextLog)
-
-    }
+    // nominate chancellor
+    if (!game.players.isChancellorPicked)
+      simulateTurn(simulateNomination(game))
+    // vote to elect chancellor
+    else if (!game.players.haveVoted)
+      simulateTurn(simulateVote(game))
+    // president and chancellor enact policy
+    // if vote fails, go straight to clean up instead
+    else if (game.players.haveVoted && !game.board.wasPolicyJustEnacted)
+      simulateTurn(simulatePolicyEnaction(game))
+    // saves game state to log and prepares game for next turn
+    else
+      cleanUp(game)
   }
 
-  private def simulateVote(game: Game): Game = {
+  private def simulateNomination(game: Game): Game = {
     val voteMap = Map(
       1 -> 5,
       2 -> 4,
@@ -78,10 +53,143 @@ class Simulation(numberOfGames: Int) {
     )
 
     val presidentId = game.players.presidentId
-    val nextPlayers = game.players.electChancellor(voteMap(presidentId))
+    val nextPlayers = game.players.pickChancellor(voteMap(presidentId))
 
     game.copy(players = nextPlayers)
   }
+
+  private def simulateVote(game: Game): Game = {
+    val nextPlayers = game.players.identity.map(_.copy(vote = Some(true)))
+    game.copy(players = PlayerGroup(nextPlayers))
+  }
+
+  private def simulatePolicyEnaction(game: Game): Game = {
+    assert(game.players.presidentId > -1)
+    assert(game.players.chancellorId > -1)
+
+    // the president draws 3 cards, discards a card, and passes the remaining hand to the chancellor
+    val pHand = game.deck.draw
+    assert(pHand.size == 3)
+
+    val pDiscard = strategy.presidentDiscard(game, pHand)
+
+    // then the chancellor discards a card and enacts the remaining policy
+    val cHand = pHand - pDiscard
+    assert(cHand.size == 2)
+
+    val cDiscard = strategy.chancellorDiscard(game, cHand)
+
+    val enactedPolicy = (cHand - cDiscard).card
+
+    val nextBoard = game.board.enactPolicy(enactedPolicy)
+
+    // update player info
+    val presidentId = game.players.presidentId
+    val chancellorId = game.players.chancellorId
+    val nextPlayers = game.players
+      .hand(pHand, presidentId)
+      .discard(pDiscard, presidentId)
+      .hand(cHand, chancellorId)
+      .discard(cDiscard, chancellorId)
+
+    game.copy(board = nextBoard, players = nextPlayers)
+  }
+
+  private def cleanUp(game: Game): Game = {
+    assert(game.players.presidentId > -1)
+    assert(game.players.chancellorId > -1)
+
+    val presidentId = game.players.presidentId
+    val chancellorId = game.players.chancellorId
+
+    val nextLog = Turn(
+      presidentId,
+      chancellorId,
+      game.players.votes,
+      game.players.handOf(presidentId),
+      game.players.discardOf(presidentId),
+      game.players.handOf(chancellorId),
+      game.players.discardOf(chancellorId),
+      game.board.lastEnactedPolicy) :: game.log
+
+    val nextDeck = game.deck.next(game.board)
+
+    val nextBoard = game.board.copy(lastEnactedPolicy = None)
+
+    val nextPlayers = game.players.advancePresident
+
+    Game(nextDeck, nextBoard, nextPlayers, nextLog)
+  }
+
+}
+
+abstract class Strategy {
+  private def discard(liberalStrategy: (Game, Hand) => Faction,
+              fascistStrategy: (Game, Hand) => Faction,
+              game: Game, hand: Hand): Faction = {
+
+    val presidentFaction = game.players.factionOf(game.players.presidentId)
+
+    presidentFaction match {
+      case Liberal => liberalStrategy(game, hand)
+      case Fascist => fascistStrategy(game, hand)
+    }
+  }
+
+  def presidentDiscard(game: Game, hand: Hand): Faction =
+    discard(liberalPresidentDiscard, fascistPresidentDiscard, game, hand)
+
+  def chancellorDiscard(game: Game, hand: Hand): Faction =
+    discard(liberalChancellorDiscard, fascistChancellorDiscard, game, hand)
+
+  protected def liberalPresidentDiscard(game: Game, hand: Hand): Faction
+
+  protected def liberalChancellorDiscard(game: Game, hand: Hand): Faction
+
+  protected def fascistPresidentDiscard(game: Game, hand: Hand): Faction
+
+  protected def fascistChancellorDiscard(game: Game, hand: Hand): Faction
+}
+
+// everyone plays liberal
+class DumbLiberalStrategy extends Strategy {
+  private def discardFascist(hand: Hand) =
+    if (hand canDiscard Fascist) Fascist
+    else Liberal
+
+  override def liberalPresidentDiscard(game: Game, hand: Hand): Faction =
+    discardFascist(hand)
+
+  override def liberalChancellorDiscard(game: Game, hand: Hand): Faction =
+    discardFascist(hand)
+
+  override def fascistPresidentDiscard(game: Game, hand: Hand): Faction =
+    discardFascist(hand)
+
+  override def fascistChancellorDiscard(game: Game, hand: Hand): Faction =
+    discardFascist(hand)
+}
+
+class SimpleFascistStrategy extends Strategy {
+  private def discardFascist(hand: Hand) =
+    if (hand canDiscard Fascist) Fascist
+    else Liberal
+
+  private def discardLiberal(hand: Hand) =
+    if (hand canDiscard Liberal) Liberal
+    else Fascist
+
+  override def liberalPresidentDiscard(game: Game, hand: Hand): Faction =
+    discardFascist(hand)
+
+  override def liberalChancellorDiscard(game: Game, hand: Hand): Faction =
+    discardFascist(hand)
+
+  override def fascistPresidentDiscard(game: Game, hand: Hand): Faction =
+    discardLiberal(hand)
+
+  override def fascistChancellorDiscard(game: Game, hand: Hand): Faction =
+    discardFascist(hand)
 }
 
 case class Game(deck: Deck,
@@ -102,15 +210,17 @@ object Game {
 }
 
 case class PlayerGroup(players: Set[Player]) {
-  val isGovtActive = players.exists(_.isChancellor)
+  val identity = players
 
-  val presidentId = players.find(_.isPresident).get.id
+  val isChancellorPicked = players.exists(_.isChancellor)
 
-  val chancellorId =
-    if (isGovtActive) players.find(_.isChancellor).get.id
-    else -1
+  val presidentId = players.find(_.isPresident).map(_.id) getOrElse -1
 
-  def advancePresident = {
+  val chancellorId = players.find(_.isChancellor).map(_.id) getOrElse -1
+
+  def fromId(playerId: Int) = players.find(_.id == playerId)
+
+  lazy val advancePresident = {
     val nextPresidentId = if (presidentId == 5) 1 else presidentId + 1
 
     val nextPlayers = players.map(player =>
@@ -122,10 +232,40 @@ case class PlayerGroup(players: Set[Player]) {
     PlayerGroup(nextPlayers)
   }
 
-  def electChancellor(playerId: Int): PlayerGroup = {
+  def factionOf(playerId: Int) = fromId(playerId).get.faction
+
+  def handOf(playerId: Int) = fromId(playerId).get.hand
+
+  def discardOf(playerId: Int) = fromId(playerId).get.discard
+
+  def pickChancellor(playerId: Int): PlayerGroup = {
     val nextPlayers = players.map(player =>
       if (player.id != playerId) player
       else player.copy(isChancellor = true)
+    )
+
+    PlayerGroup(nextPlayers)
+  }
+
+  val haveVoted = players.forall(_.vote.isDefined)
+
+  val votePassed = players.count(_.vote.getOrElse(false) == true) >= 3
+
+  val votes: Map[Boolean, Set[Int]] = players.groupBy(_.vote getOrElse false).mapValues(_.map(_.id))
+
+  def hand(hand: Hand, id: Int) = {
+    val nextPlayers = players.map(player =>
+      if (player.id == id) player.copy(hand = Some(hand))
+      else player
+    )
+
+    PlayerGroup(nextPlayers)
+  }
+
+  def discard(faction: Faction, id: Int) = {
+    val nextPlayers = players.map(player =>
+      if (player.id == id) player.copy(discard = Some(faction))
+      else player
     )
 
     PlayerGroup(nextPlayers)
@@ -137,8 +277,8 @@ object PlayerGroup {
   val numberOfFascists = 2
 
   def reset: PlayerGroup = {
-    val liberals = List.fill(numberOfLiberals)(Player(0, Liberal, false, false, true))
-    val fascists = List.fill(numberOfFascists)(Player(0, Fascist, false, false, true))
+    val liberals = List.fill(numberOfLiberals)(Player(0, Liberal, false, false, None, None, true, None))
+    val fascists = List.fill(numberOfFascists)(Player(0, Fascist, false, false, None, None, true, None))
 
     val allPlayers = liberals ::: fascists
 
@@ -158,24 +298,31 @@ case class Player(id: Int,
                   faction: Faction,
                   isPresident: Boolean,
                   isChancellor: Boolean,
-                  eligibleForChancellor: Boolean)
+                  hand: Option[Hand],
+                  discard: Option[Faction],
+                  eligibleForChancellor: Boolean,
+                  vote: Option[Boolean])
 
 case class Turn(presidentId: Int,
                 chancellorId: Int,
-                draw: Hand,
-                pDiscard: Faction,
-                cDiscard: Faction,
-                enactedPolicy: Faction)
+                votes: Map[Boolean, Set[Int]],
+                pHand: Option[Hand],
+                pDiscard: Option[Faction],
+                cHand: Option[Hand],
+                cDiscard: Option[Faction],
+                enactedPolicy: Option[Faction])
 
-case class Board(fascists: Int, liberals: Int) {
+case class Board(fascists: Int, liberals: Int, lastEnactedPolicy: Option[Faction]) {
   def enactPolicy(faction: Faction): Board = faction match {
-    case Fascist => Board(fascists + 1, liberals)
-    case Liberal => Board(fascists, liberals + 1)
+    case Fascist => Board(fascists + 1, liberals, Some(Fascist))
+    case Liberal => Board(fascists, liberals + 1, Some(Liberal))
   }
+
+  val wasPolicyJustEnacted = lastEnactedPolicy.isDefined
 }
 
 object Board {
-  def reset = Board(0, 0)
+  def reset = Board(0, 0, None)
 }
 
 case class Deck(policies: List[Policy]) {
@@ -221,6 +368,11 @@ case class Hand(fascists: Int, liberals: Int) {
   }
 
   def -(faction: Faction): Hand = this discard faction
+
+  def canDiscard(faction: Faction) = faction match {
+    case Fascist => fascists > 0
+    case Liberal => liberals > 0
+  }
 
   // should only be called when size is 1
   val card = if (fascists == 1) Fascist else Liberal

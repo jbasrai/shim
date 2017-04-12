@@ -1,6 +1,7 @@
 package simulation.entities
 
 import simulation._
+import simulation.strategy.{DefaultLiberalStrategy, Strategy}
 
 import scala.util.Random
 
@@ -47,7 +48,7 @@ case class PlayerGroup(players: Set[Player]) {
 
   val haveVoted = players.forall(_.vote.isDefined)
 
-  val votePassed = players.count(_.vote.getOrElse(false) == true) >= 3
+  val havePassedVote = players.count(_.vote.getOrElse(false) == true) >= 3
 
   val votes: Map[Boolean, Set[Int]] = players.groupBy(_.vote getOrElse false).mapValues(_.map(_.id))
 
@@ -68,15 +69,24 @@ case class PlayerGroup(players: Set[Player]) {
 
     PlayerGroup(nextPlayers)
   }
+
+  def presidentDiscardStrategy: (Game, Hand) => Faction =
+    players.find(_.isPresident).map(p => p.strategy.presidentDiscardStrategy(_,_)).get
+
+  def chancellorDiscardStrategy: (Game, Hand) => Faction =
+    players.find(_.isChancellor).map(p => p.strategy.chancellorDiscardStrategy(_,_)).get
 }
 
 object PlayerGroup {
   val numberOfLiberals = 3
   val numberOfFascists = 2
 
-  def reset: PlayerGroup = {
-    val liberals = List.fill(numberOfLiberals)(Player(0, Liberal, false, false, None, None, true, None))
-    val fascists = List.fill(numberOfFascists)(Player(0, Fascist, false, false, None, None, true, None))
+  def reset(strategies: Map[Faction, Strategy]): PlayerGroup = {
+    val liberals = List.fill(numberOfLiberals)(
+      Player(0, Liberal, strategies(Liberal), false, false, None, None, true, None))
+
+    val fascists = List.fill(numberOfFascists)(
+      Player(0, Fascist, strategies(Fascist), false, false, None, None, true, None))
 
     val allPlayers = liberals ::: fascists
 

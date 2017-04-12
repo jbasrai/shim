@@ -6,7 +6,7 @@ import entities._
 /**
   * Created by jbasrai on 4/10/17.
   */
-class Simulation(strategy: Strategy, numberOfGames: Int) {
+class Simulation(strategies: Map[Faction, Strategy], numberOfGames: Int) {
   // main entry point of the project
   // runs the simulation from start to finish, over <numberOfGames> trials
   // returns a reverse-ordered list of final game states, each also containing the complete game log
@@ -16,7 +16,7 @@ class Simulation(strategy: Strategy, numberOfGames: Int) {
     if (gameCount > numberOfGames)
       results
     else
-      runSimulation(gameCount + 1, simulateGame(Game.reset) :: results)
+      runSimulation(gameCount + 1, simulateGame(Game.reset(strategies)) :: results)
   }
 
   // plays out a game from start to finish, returning the final game state
@@ -29,7 +29,7 @@ class Simulation(strategy: Strategy, numberOfGames: Int) {
       game
   }
 
-  // all simulation.strategy calls are contained here
+  // all strategy calls are contained here
   private def simulateTurn(game: Game): Game = {
     // nominate chancellor
     if (!game.players.isChancellorPicked)
@@ -39,7 +39,7 @@ class Simulation(strategy: Strategy, numberOfGames: Int) {
       simulateTurn(simulateVote(game))
     // president and chancellor enact policy
     // if vote fails, go straight to clean up instead
-    else if (game.players.haveVoted && !game.board.wasPolicyJustEnacted)
+    else if (game.players.havePassedVote && !game.board.wasPolicyJustEnacted)
       simulateTurn(simulatePolicyEnaction(game))
     // saves game state to log and prepares game for next turn
     else
@@ -71,16 +71,18 @@ class Simulation(strategy: Strategy, numberOfGames: Int) {
     assert(game.players.chancellorId > -1)
 
     // the president draws 3 cards, discards a card, and passes the remaining hand to the chancellor
+    val pDiscardStrat = game.players.presidentDiscardStrategy
     val pHand = game.deck.draw
     assert(pHand.size == 3)
 
-    val pDiscard = strategy.presidentDiscard(game, pHand)
+    val pDiscard = pDiscardStrat(game, pHand)
 
     // then the chancellor discards a card and enacts the remaining policy
+    val cDiscardStrat = game.players.chancellorDiscardStrategy
     val cHand = pHand - pDiscard
     assert(cHand.size == 2)
 
-    val cDiscard = strategy.chancellorDiscard(game, cHand)
+    val cDiscard = cDiscardStrat(game, cHand)
 
     val enactedPolicy = (cHand - cDiscard).card
 
@@ -128,7 +130,10 @@ class Simulation(strategy: Strategy, numberOfGames: Int) {
 object Simulation {
   def main(args: Array[String]): Unit = {
     val trials = 1000
-    val sim = new Simulation(new SimpleFascistStrategy, trials)
+    val sim = new Simulation(Map(
+      Liberal -> DefaultLiberalStrategy,
+      Fascist -> SimpleFascistStrategy
+    ), trials)
     val results = sim.start
 
     println(results.head.log)

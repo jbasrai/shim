@@ -5,30 +5,21 @@ import simulation.entities._
 /**
   * Created by jbasrai on 4/11/17.
   */
-abstract class Strategy {
-  private def discard(liberalStrategy: (Game, Hand) => Faction,
-              fascistStrategy: (Game, Hand) => Faction,
-              game: Game, hand: Hand): Faction = {
+trait Strategy {
+  def presidentDiscardStrategy(game: Game, hand: Hand): Faction
 
-    val presidentFaction = game.players.factionOf(game.players.presidentId)
+  def chancellorDiscardStrategy(game: Game, hand: Hand): Faction
 
-    presidentFaction match {
-      case Liberal => liberalStrategy(game, hand)
-      case Fascist => fascistStrategy(game, hand)
-    }
-  }
+  private def discardIfPossible(faction: Faction, hand: Hand) =
+    if (hand canDiscard faction) faction
+    else faction.otherFaction
 
-  def presidentDiscard(game: Game, hand: Hand): Faction =
-    discard(liberalPresidentDiscard, fascistPresidentDiscard, game, hand)
+  protected def discardFascistIfPossible(hand: Hand) =
+    discardIfPossible(Fascist, hand)
 
-  def chancellorDiscard(game: Game, hand: Hand): Faction =
-    discard(liberalChancellorDiscard, fascistChancellorDiscard, game, hand)
-
-  protected def liberalPresidentDiscard(game: Game, hand: Hand): Faction
-
-  protected def liberalChancellorDiscard(game: Game, hand: Hand): Faction
-
-  protected def fascistPresidentDiscard(game: Game, hand: Hand): Faction
-
-  protected def fascistChancellorDiscard(game: Game, hand: Hand): Faction
+  protected def discardLiberalIfPossible(hand: Hand) =
+    discardIfPossible(Liberal, hand)
 }
+
+trait LiberalStrategy extends Strategy
+trait FascistStrategy extends Strategy

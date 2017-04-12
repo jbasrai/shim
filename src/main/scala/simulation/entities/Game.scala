@@ -1,6 +1,7 @@
 package simulation.entities
 
 import simulation._
+import simulation.strategy.Strategy
 
 /**
   * Created by jbasrai on 4/11/17.
@@ -19,6 +20,7 @@ case class Game(deck: Deck,
 }
 
 object Game {
-  def reset: Game = Game(Deck.reset, Board.reset, PlayerGroup.reset, Nil)
+  def reset(strategies: Map[Faction, Strategy]): Game =
+    Game(Deck.reset, Board.reset, PlayerGroup.reset(strategies), Nil)
 }
 
